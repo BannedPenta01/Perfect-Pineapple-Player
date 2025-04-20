@@ -1,0 +1,4 @@
+pygame
+Pillow
+pywin32
+mutagen 
