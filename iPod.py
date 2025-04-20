@@ -101,7 +101,8 @@ def load_settings():
         "music_dirs": [],
         "video_dirs": [],
         "image_dirs": [],
-        "ffmpeg_path": None # ADDED
+        "ffmpeg_path": None, # ADDED
+        "games": [] # ADDED for imported games
     }
     if not os.path.exists(SETTINGS_FILE):
         return default_settings
@@ -1270,6 +1271,82 @@ class DonateScreen(BaseScreen):
             return f'donate_{donate_choice}'
         return None
 
+# --- Add a placeholder screen for games --- # Moved here
+class GamePlaceholderScreen(BaseScreen):
+    def __init__(self, font, theme_name, game_name):
+        self.game_name = game_name
+        super().__init__(font, theme_name)
+
+    def _pre_render_content(self):
+        lines = [
+            f"Game: {self.game_name}",
+            "",
+            "(Game launching/emulation not implemented)",
+            "",
+            "Press B/Esc to go back."
+        ]
+        render_width = self.rect.width - 40 # Available width for text
+        # Initial estimate, will be recalculated
+        estimated_height = len(lines) * (self.font.get_linesize() + 6) + 100
+        temp_surface = pygame.Surface((render_width, estimated_height), pygame.SRCALPHA)
+        temp_surface.fill((0,0,0,0))
+
+        y = 10 # Start y position
+        max_y = 0
+        line_spacing = self.font.get_linesize()
+
+        for line in lines:
+            words = line.split(' ')
+            x = 10 # Start x position for each line
+            current_line_text = ""
+
+            if not line:
+                # Handle blank lines
+                y += line_spacing // 1.5
+                max_y = max(max_y, y)
+            else:
+                for word in words:
+                    test_text = current_line_text
+                    if test_text: test_text += " "
+                    test_text += word
+                    test_width = self.font.size(test_text)[0]
+
+                    if test_width < render_width - 10: # Word fits
+                        if current_line_text: current_line_text += " "
+                        current_line_text += word
+                    else: # Word doesn't fit, render previous line
+                        if current_line_text:
+                            line_surf = self.font.render(current_line_text, True, self.theme_text)
+                            temp_surface.blit(line_surf, (x, y))
+                            y += line_spacing
+                            max_y = max(max_y, y)
+                        current_line_text = word
+                        # Handle single word too long (render it anyway)
+                        if self.font.size(current_line_text)[0] >= render_width - 10:
+                            line_surf = self.font.render(current_line_text, True, self.theme_text)
+                            temp_surface.blit(line_surf, (x, y))
+                            y += line_spacing
+                            max_y = max(max_y, y)
+                            current_line_text = "" # Clear as rendered
+
+                # Render the last part of the line
+                if current_line_text:
+                    line_surf = self.font.render(current_line_text, True, self.theme_text)
+                    temp_surface.blit(line_surf, (x, y))
+                    y += line_spacing
+                    max_y = max(max_y, y)
+
+            # Add space between original lines
+            if line: y += 2
+            else: y += 6
+            max_y = max(max_y, y)
+
+        # Crop the surface to the actual content height
+        actual_height = max_y + 15 # Add bottom padding
+        self.content_surface = pygame.Surface((render_width, actual_height), pygame.SRCALPHA)
+        self.content_surface.blit(temp_surface, (0,0), (0, 0, render_width, actual_height))
+        self.total_content_height = actual_height
+
 # --- Main Application Class ---
 
 class PerfectPineapplePlayer:
@@ -1368,6 +1445,7 @@ class PerfectPineapplePlayer:
             ("Music", "music"),
             ("Videos", "videos"),
             ("Photos", "photos"),
+            ("Games", "games"), # Inserted before Settings
             ("Settings", "settings"),
             ("Quit", "quit") # Added Quit button
         ]
@@ -1382,6 +1460,7 @@ class PerfectPineapplePlayer:
             ("Import Music", "import_music"),
             ("Import Videos", "import_videos"),
             ("Import Photos", "import_photos"),
+            ("Import Games", "import_games"), # ADDED
             ("Themes", "themes"),
             ("Reset Imported Paths", "reset_imported_paths"),
             ("Donate", "donate"),
@@ -1439,6 +1518,17 @@ class PerfectPineapplePlayer:
 
         return menu
 
+    def build_games_menu(self):
+        """Builds menu listing imported games (.ipg files)."""
+        games = self.settings.get("games", [])
+        if not games:
+            items = [("No games imported.", None), ("(Import in Settings)", None), ("Back", "back")]
+        else:
+            items = [(os.path.basename(f), f"play_game_{i}") for i, f in enumerate(games)]
+            items.append(("Back", "back"))
+        menu = Menu(items, self.font)
+        menu.update_theme(self.current_theme_name)
+        return menu
 
     def update_theme(self, new_theme_name):
         if new_theme_name in THEMES:
@@ -1644,26 +1734,24 @@ class PerfectPineapplePlayer:
         elif action == "reset_imported_paths":
             # Show confirmation submenu
             self.menu_stack.append(self.active_menu)
-            # Format items correctly: [(display, action), ...]
             self.active_menu = Menu(
                 [
-                    ("Are you sure you want to reset?", None), # Display only
+                    ("Are you sure you want to reset?", None),
                     ("Yes", "confirm_reset_imported_paths"),
                     ("No", "cancel_reset_imported_paths")
                 ],
-                self.font # Pass font, no actions keyword
+                self.font
             )
-            self.active_menu.update_theme(self.current_theme_name) # Ensure theme is applied
+            self.active_menu.update_theme(self.current_theme_name)
             return
         elif action == "confirm_reset_imported_paths":
-            # Perform the actual reset here
             print("Resetting imported paths...")
             self.settings["music_dirs"] = []
             self.settings["video_dirs"] = []
             self.settings["image_dirs"] = []
+            self.settings["games"] = [] # Also reset games
             save_settings(self.settings)
             print("Imported paths reset.")
-            # Go back to the previous menu (Settings menu)
             self.go_back_menu()
             return
         elif action == "cancel_reset_imported_paths":
@@ -1726,6 +1814,35 @@ class PerfectPineapplePlayer:
                   # No play_pause for images, just load and hide menu
                   self.active_menu = None # Hide menu when viewing
         # --- ADD MISSING BLOCKS --- End
+        elif action.startswith("play_game_"):
+            index = int(action.split("play_game_")[1])
+            games = self.settings.get("games", [])
+            if 0 <= index < len(games):
+                self.active_screen = GamePlaceholderScreen(self.font, self.current_theme_name, os.path.basename(games[index]))
+                self.active_menu = None
+        elif action == "games":
+            games_menu = self.build_games_menu()
+            self.menu_stack.append(games_menu)
+            self.active_menu = games_menu
+        elif action == "import_games":
+            # Use file dialog to select one or more .ipg files
+            root = Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            file_paths = filedialog.askopenfilenames(
+                title="Select iPod Game Files (.ipg)",
+                filetypes=[("iPod Games", "*.ipg"), ("All Files", "*.*")]
+            )
+            root.destroy()
+            if file_paths:
+                # Add new games, avoiding duplicates
+                new_games = [f for f in file_paths if f not in self.settings["games"]]
+                if new_games:
+                    self.settings["games"].extend(new_games)
+                    save_settings(self.settings)
+                    print(f"Imported games: {new_games}")
+                else:
+                    print("No new games to import (all already imported)")
 
     def update(self):
         """Update game state."""
@@ -1804,3 +1921,5 @@ if __name__ == '__main__':
         except Exception: pass
         input("An error occurred. Press Enter to exit.")
         sys.exit(1) 
+
+# --- Add a placeholder screen for games --- # REMOVED FROM HERE
