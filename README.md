@@ -1,6 +1,7 @@
 # Perfect Pineapple Player
 
-A modern media player inspired by the iPod Classic interface, built with Python and Pygame.
+A Basic Media Player thats inspired by 2000s media players like the iPod and Kodi.  Currently it plays music, videos(with limited functionality) and images.
+This entire program its done with Ai, Yep... Ai, I made this program to prove that Ai Coding its a viable option for doing software and not just a trendy gimmick.
 
 ## Features
 
