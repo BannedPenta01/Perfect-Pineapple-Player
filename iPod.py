@@ -1227,34 +1227,45 @@ class DonateScreen(BaseScreen):
             "Press the corresponding number key (1-5) to open a PayPal link in your browser.",
             "",
         ]
+        # render_width is the width of the content_surface
         render_width = self.rect.width - 40
-        temp_rect = pygame.Rect(0, 0, render_width, 10000)
-        # Calculate height: base + buttons + instructions
-        button_height = self.font.get_linesize() + 8
-        total_height = len(base_lines) * self.font.get_linesize() + len(self._donate_links) * button_height + 40
-        self.total_content_height = total_height
-        self.content_surface = pygame.Surface((render_width, total_height), pygame.SRCALPHA)
-        self.content_surface.fill((0,0,0,0))
+
+        # Create a temporary surface with a generous height to render content onto
+        estimated_height = 500
+        temp_content_surface = pygame.Surface((render_width, estimated_height), pygame.SRCALPHA)
+        temp_content_surface.fill((0,0,0,0)) # Transparent background
+
         y = 0
-        # Render base lines
+        # Render base lines using render_text_wrapped for proper word wrapping
         for line in base_lines:
-            surf = self.font.render(line, True, self.theme_text)
-            self.content_surface.blit(surf, (10, y))
-            y += self.font.get_linesize() + (6 if line == "" else 0)
+            # The rect for render_text_wrapped is relative to temp_content_surface
+            # Provide 10px padding on each side (total 20px off render_width)
+            line_render_rect = pygame.Rect(10, y, render_width - 20, estimated_height - y)
+            height_used = render_text_wrapped(temp_content_surface, line, self.font, self.theme_text, line_render_rect)
+            y += height_used + (6 if line == "" else 0) # Add some padding between lines, more for blank lines
+
         # Render donation buttons with shortcut highlight
         button_font = pygame.font.SysFont(None, 24, bold=True)
         for idx, (label, url) in enumerate(self._donate_links):
-            btn_rect = pygame.Rect(10, y, render_width-20, button_height)
-            pygame.draw.rect(self.content_surface, self.theme_highlight, btn_rect, border_radius=6)
+            btn_rect = pygame.Rect(10, y, render_width-20, self.font.get_linesize() + 8)
+            pygame.draw.rect(temp_content_surface, self.theme_highlight, btn_rect, border_radius=6)
             btn_text = f"[{idx+1}] {label}"
             text_surf = button_font.render(btn_text, True, self.theme_bg)
             text_rect = text_surf.get_rect(center=btn_rect.center)
-            self.content_surface.blit(text_surf, text_rect)
-            y += button_height + 4
-        # Render close instructions
+            temp_content_surface.blit(text_surf, text_rect)
+            y += btn_rect.height + 4
+
+        # Render close instructions using render_text_wrapped
         close_text = "(Press B/Esc to close)"
-        close_surf = self.font.render(close_text, True, self.theme_text)
-        self.content_surface.blit(close_surf, (10, y+10))
+        close_render_rect = pygame.Rect(10, y + 10, render_width - 20, estimated_height - (y+10))
+        height_used_close = render_text_wrapped(temp_content_surface, close_text, self.font, self.theme_text, close_render_rect)
+        y += 10 + height_used_close # Add padding and height of the close text
+
+        # Crop the temporary surface to the actual content height and assign it
+        final_height = y + 10 # Add a bit of padding at the bottom
+        self.content_surface = pygame.Surface((render_width, final_height), pygame.SRCALPHA)
+        self.content_surface.blit(temp_content_surface, (0,0), (0, 0, render_width, final_height))
+        self.total_content_height = final_height
 
     def handle_input(self, events):
         action = super().handle_input(events)
